@@ -189,26 +189,6 @@ with st.sidebar:
     # PDF Upload
     st.markdown("### 📄 Upload PDF")
     uploaded_file = st.file_uploader("Choose a PDF or TXT file", type=['pdf', 'txt'])
-
-    from src.process_documents import process_documents
-import os
-
-if uploaded_file is not None:
-    # Save uploaded file to data folder
-    file_path = os.path.join("data", uploaded_file.name)
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.getvalue())
-
-    st.success("✅ File uploaded successfully!")
-
-    # Process and store into ChromaDB
-    with st.spinner("📚 Processing your document... Please wait..."):
-        process_documents(
-            input_path=file_path,
-            config_path="config_free.yaml"
-        )
-
-    st.success("🎉 Document processed and added to knowledge base!")
     
     if uploaded_file:
         if st.button("🚀 Process", type="primary", use_container_width=True):
