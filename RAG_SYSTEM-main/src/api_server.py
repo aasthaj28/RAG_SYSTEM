@@ -2,6 +2,15 @@
 API Server Module
 FastAPI server for RAG system with REST endpoints.
 """
+# ---- add at the very top of the file ----
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+# -----------------------------------------
 
 import os
 from typing import Optional, List
