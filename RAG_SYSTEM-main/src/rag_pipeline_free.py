@@ -100,31 +100,17 @@ class FreeRAGPipeline:
         document_path: str,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """
-        Ingest a document into the RAG system.
-        
-        Args:
-            document_path: Path to document file
-            metadata: Optional metadata for the document
-            
-        Returns:
-            Ingestion status and statistics
-        """
         logger.info(f"Ingesting document: {document_path}")
         
         try:
-            # Process document
             chunks = self.document_processor.process_document(
                 document_path,
                 metadata=metadata
             )
             
-            # Generate embeddings (FREE)
             texts = [chunk['text'] for chunk in chunks]
-            logger.info(f"Generating embeddings for {len(texts)} chunks...")
             embeddings = self.embedding_model.encode(texts, show_progress_bar=False)
             
-            # Store in vector database
             chunk_metadata = [chunk['metadata'] for chunk in chunks]
             chunk_ids = [f"{Path(document_path).stem}_chunk_{i}" for i in range(len(chunks))]
             
@@ -135,23 +121,16 @@ class FreeRAGPipeline:
                 ids=chunk_ids
             )
             
-            result = {
+            return {
                 'status': 'success',
                 'document': document_path,
                 'chunks_processed': len(chunks),
                 'embeddings_generated': len(embeddings)
             }
             
-            logger.info(f"Successfully ingested document with {len(chunks)} chunks")
-            return result
-            
         except Exception as e:
             logger.error(f"Error ingesting document: {e}")
-            return {
-                'status': 'error',
-                'document': document_path,
-                'error': str(e)
-            }
+            return {'status': 'error', 'document': document_path, 'error': str(e)}
     
     def query(
         self,
@@ -159,49 +138,27 @@ class FreeRAGPipeline:
         top_k: Optional[int] = None,
         return_sources: bool = True
     ) -> Dict[str, Any]:
-        """
-        Query the RAG system.
-        
-        Args:
-            question: User's question
-            top_k: Number of documents to retrieve
-            return_sources: Whether to include source information
-            
-        Returns:
-            Answer and metadata
-        """
         logger.info(f"Processing query: {question}")
         
         try:
             k = top_k or self.config['retrieval']['top_k']
-            
-            # Generate query embedding (FREE)
             query_embedding = self.embedding_model.encode([question])
             
-            # Retrieve relevant documents
             results = self.collection.query(
                 query_embeddings=query_embedding.tolist(),
                 n_results=k
             )
             
             if not results['documents'][0]:
-                return {
-                    'question': question,
-                    'answer': "No relevant documents found in the knowledge base.",
-                    'sources': [],
-                    'num_sources': 0
-                }
+                return {'question': question, 'answer': "No relevant documents found.", 'sources': [], 'num_sources': 0}
             
-            # Format context
             context = "\n\n".join([
                 f"[Document {i+1}]\n{doc}"
                 for i, doc in enumerate(results['documents'][0])
             ])
             
-            # Generate answer with Ollama (FREE)
             answer = self._generate_answer(question, context)
             
-            # Build response
             response = {
                 'question': question,
                 'answer': answer,
@@ -217,41 +174,44 @@ class FreeRAGPipeline:
                     for doc, meta in zip(results['documents'][0], results['metadatas'][0])
                 ]
             
-            logger.info("Query processed successfully")
             return response
             
         except Exception as e:
             logger.error(f"Error processing query: {e}")
-            return {
-                'question': question,
-                'answer': f"Error processing query: {str(e)}",
-                'error': str(e)
-            }
+            return {'question': question, 'answer': f"Error: {str(e)}", 'error': str(e)}
     
     def _generate_answer(self, question: str, context: str) -> str:
-        """Generate answer using Ollama."""
-        prompt = f"""Based on the following context, answer the question accurately and concisely.
+        """
+        Generate a **concise and clean** answer (instead of dumping resume text).
+        """
+        prompt = f"""
+You are a helpful assistant. Answer the user's question based ONLY on the context.
 
 Context:
 {context}
 
-Question: {question}
+Question:
+{question}
 
-Answer:"""
-        
+Your answer must follow these rules:
+- Respond in 1–4 clear sentences.
+- Summarize the key information.
+- DO NOT copy long text chunks.
+- DO NOT include phone numbers, emails, or IDs.
+- If the answer is not in the context, say: "I couldn't find that information in the documents."
+
+Answer:
+""".strip()
+
         try:
             response = requests.post(
                 f"{self.ollama_url}/api/generate",
-                json={
-                    "model": self.ollama_model,
-                    "prompt": prompt,
-                    "stream": False
-                },
+                json={"model": self.ollama_model, "prompt": prompt, "stream": False},
                 timeout=60
             )
             
             if response.status_code == 200:
-                return response.json().get('response', 'Error generating response').strip()
+                return response.json().get('response', '').strip()
             else:
                 return f"Error: Ollama returned status {response.status_code}"
                 
@@ -260,7 +220,6 @@ Answer:"""
             return f"Error generating answer: {str(e)}"
     
     def get_statistics(self) -> Dict[str, Any]:
-        """Get pipeline statistics."""
         return {
             'vector_store': 'chromadb',
             'embedding_model': self.config['embeddings']['model'],
@@ -269,7 +228,6 @@ Answer:"""
         }
     
     def clear_database(self):
-        """Clear all documents from vector store."""
         logger.warning("Clearing vector store...")
         self.chroma_client.delete_collection(self.collection.name)
         self.collection = self.chroma_client.create_collection(self.collection.name)
@@ -277,8 +235,6 @@ Answer:"""
 
 
 if __name__ == "__main__":
-    # Quick test
     pipeline = FreeRAGPipeline()
-    print(f"FREE RAG Pipeline ready!")
-    print(f"Statistics: {pipeline.get_statistics()}")
-
+    print("FREE RAG Pipeline ready!")
+    print(pipeline.get_statistics())
